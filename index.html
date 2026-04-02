@@ -131,7 +131,7 @@
 
         trigger.addEventListener('mousedown', () => {
             trigger.classList.add('active');
-            energy = Math.min(50, energy + gainPerClick);
+            energy = Math.min(200, energy + gainPerClick);
             
             if (!isPlaying) {
                 isPlaying = true;
