@@ -3,34 +3,39 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Rush E - Local Audio Visualizer</title>
+    <title>Rush E - Click to Stay Alive</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { margin: 0; background-color: #050505; color: white; overflow: hidden; font-family: ui-sans-serif, system-ui, sans-serif; }
+        body { margin: 0; background-color: #050505; color: white; overflow: hidden; font-family: ui-sans-serif, system-ui, sans-serif; user-select: none; }
         canvas { display: block; }
-        .ui-overlay { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; z-index: 50; transition: opacity 0.5s ease; }
+        .ui-overlay { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; z-index: 50; pointer-events: none; }
         #trigger-box {
             width: 180px; height: 180px; border: 4px solid #ef4444; background: rgba(239, 68, 68, 0.1);
             display: flex; align-items: center; justify-content: center; cursor: pointer; border-radius: 20px;
-            box-shadow: 0 0 30px rgba(239, 68, 68, 0.4); transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            box-shadow: 0 0 30px rgba(239, 68, 68, 0.4); transition: all 0.1s ease-out;
+            pointer-events: auto;
         }
-        #trigger-box:hover { background: rgba(239, 68, 68, 0.3); transform: scale(1.1); box-shadow: 0 0 50px rgba(239, 68, 68, 0.6); }
-        .hidden { opacity: 0; pointer-events: none; }
+        #trigger-box.active { transform: scale(0.9); background: rgba(239, 68, 68, 0.5); box-shadow: 0 0 60px #ef4444; }
+        .energy-bar-container { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); width: 300px; height: 10px; background: #111; border-radius: 5px; border: 1px solid #333; }
+        #energy-bar { width: 100%; height: 100%; background: #ef4444; border-radius: 5px; transition: width 0.1s linear; }
     </style>
 </head>
 <body>
+
+    <div class="energy-bar-container" id="energy-ui" style="display: none;">
+        <div id="energy-bar"></div>
+        <p class="text-[10px] uppercase tracking-widest text-center mt-2 text-red-500 font-bold">Keep Clicking!</p>
+    </div>
 
     <div class="ui-overlay" id="overlay">
         <div id="trigger-box">
             <span class="text-red-500 font-black text-6xl italic uppercase tracking-tighter">E</span>
         </div>
-        <p class="mt-6 text-zinc-400 uppercase tracking-widest text-xs font-bold animate-pulse">Click to Play (Requires rushe.mp3)</p>
+        <p id="instruction" class="mt-6 text-zinc-400 uppercase tracking-widest text-xs font-bold animate-pulse">Click to Start the Chaos</p>
     </div>
 
     <canvas id="visualizer"></canvas>
-
-    <!-- Local Audio Element -->
-    <audio id="rush-audio" src="rushe.mp3" preload="auto"></audio>
+    <audio id="rush-audio" src="rushe.mp3" preload="auto" loop></audio>
 
     <script>
         const canvas = document.getElementById('visualizer');
@@ -38,10 +43,19 @@
         const overlay = document.getElementById('overlay');
         const trigger = document.getElementById('trigger-box');
         const audio = document.getElementById('rush-audio');
+        const energyBar = document.getElementById('energy-bar');
+        const energyUi = document.getElementById('energy-ui');
+        const instruction = document.getElementById('instruction');
 
-        let width, height, isRunning = false;
+        let width, height;
         let notes = [];
         const numKeys = 88;
+
+        // Game Logic State
+        let energy = 0; // 0 to 100
+        const decayRate = 1.5; // How fast energy drops per frame
+        const gainPerClick = 25; // How much energy you get per click
+        let isPlaying = false;
 
         function resize() {
             width = window.innerWidth; height = window.innerHeight;
@@ -55,10 +69,9 @@
                 this.xIndex = xIndex;
                 this.y = -length;
                 this.length = length;
-                // Mostly red for Rush E, with some blue/purple highlights
-                this.color = Math.random() > 0.7 ? '#ef4444' : `hsl(${220 + Math.random() * 40}, 80%, 60%)`;
+                this.color = Math.random() > 0.6 ? '#ef4444' : '#fff';
             }
-            update() { this.y += 10; } // Note fall speed
+            update() { this.y += 12; }
             draw() {
                 const x = this.xIndex * (width / numKeys);
                 const w = (width / numKeys) - 1;
@@ -71,24 +84,29 @@
         }
 
         function spawnNotes() {
-            // Chaotic spawning logic
-            if (Math.random() > 0.4) {
-                const count = Math.floor(Math.random() * 6) + 1;
-                for (let i = 0; i < count; i++) {
-                    notes.push(new Note(Math.floor(Math.random() * numKeys), 30 + Math.random() * 150));
+            if (energy > 10) {
+                const spawnCount = Math.floor(energy / 20) + 1;
+                for (let i = 0; i < spawnCount; i++) {
+                    notes.push(new Note(Math.floor(Math.random() * numKeys), 40 + Math.random() * 100));
                 }
-            }
-            // Rapid streams
-            if (Math.random() > 0.98) {
-                for (let i = 0; i < numKeys; i += 2) notes.push(new Note(i, 50));
             }
         }
 
         function animate() {
-            ctx.fillStyle = 'rgba(5, 5, 5, 0.3)'; // Trail effect
+            ctx.fillStyle = 'rgba(5, 5, 5, 0.2)';
             ctx.fillRect(0, 0, width, height);
 
-            if (isRunning) spawnNotes();
+            if (isPlaying) {
+                energy = Math.max(0, energy - decayRate);
+                energyBar.style.width = energy + '%';
+                
+                if (energy > 5) {
+                    spawnNotes();
+                    if (audio.paused) audio.play();
+                } else {
+                    if (!audio.paused) audio.pause();
+                }
+            }
 
             for (let i = notes.length - 1; i >= 0; i--) {
                 const n = notes[i];
@@ -97,32 +115,48 @@
                 if (n.y > height) notes.splice(i, 1);
             }
 
-            // Piano keys visualization at bottom
+            // Piano UI
             ctx.fillStyle = '#111';
-            ctx.fillRect(0, height - 80, width, 80);
-            
-            // Key highlights
+            ctx.fillRect(0, height - 60, width, 60);
             const kw = width / numKeys;
             notes.forEach(n => {
-                if (n.y + n.length >= height - 80) {
+                if (n.y + n.length >= height - 60) {
                     ctx.fillStyle = n.color;
-                    ctx.fillRect(n.xIndex * kw, height - 80, kw - 1, 80);
+                    ctx.fillRect(n.xIndex * kw, height - 60, kw - 1, 60);
                 }
             });
 
             requestAnimationFrame(animate);
         }
 
-        trigger.addEventListener('click', () => {
-            audio.play().then(() => {
-                isRunning = true;
-                overlay.classList.add('hidden');
-            }).catch(e => {
-                console.error("Audio failed. Check if rushe.mp3 exists in the folder.", e);
-                // Fallback: Start visual even if audio fails
-                isRunning = true;
-                overlay.classList.add('hidden');
-            });
+        trigger.addEventListener('mousedown', () => {
+            trigger.classList.add('active');
+            energy = Math.min(100, energy + gainPerClick);
+            
+            if (!isPlaying) {
+                isPlaying = true;
+                energyUi.style.display = 'block';
+                instruction.innerText = "KEEP CLICKING!";
+            }
+        });
+
+        window.addEventListener('mouseup', () => {
+            trigger.classList.remove('active');
+        });
+
+        // Touch support for mobile
+        trigger.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            trigger.classList.add('active');
+            energy = Math.min(100, energy + gainPerClick);
+            if (!isPlaying) {
+                isPlaying = true;
+                energyUi.style.display = 'block';
+            }
+        });
+
+        trigger.addEventListener('touchend', () => {
+            trigger.classList.remove('active');
         });
 
         animate();
